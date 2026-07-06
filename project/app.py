@@ -24,6 +24,10 @@ from PIL import Image
 from logic.cyber_incidents import get_all_incidents
 from logic.it_tickets import get_all_tickets
 from logic.metadatas import get_all_metadata
+import io
+from app_model.users import get_username
+from datetime import datetime, timedelta
+import re
 
 
 client = Groq(
@@ -68,6 +72,17 @@ def change_pw(conn,new_pw):
     SET password_hash = ? WHERE username = ?
     """,
     (hashed,st.session_state.username,))
+    conn.commit()
+
+def update_pw(conn,new_pw):
+    
+    hashed=passwordhash(new_pw)
+    cursor= conn.cursor()
+    cursor.execute("""
+    UPDATE users
+    SET password_hash = ? WHERE username = ?
+    """,
+    (hashed,st.session_state.reset_username,))
     conn.commit()
 
 def passwordcheck(password,hashed_pw):
@@ -120,9 +135,15 @@ def send_verification_code(conn,username):
       with smtplib.SMTP_SSL("smtp.gmail.com",465) as smtp:
             smtp.login(email_sender,email_password)
             smtp.send_message(msg)    
-      st.write('Email sent!')                                      
+      st.write('Email sent!')                            
 
-import streamlit as st
+
+def display_check_pw(requirements,sentence):
+
+      if requirements:
+            st.markdown(f'✅,{sentence}')
+      else: 
+            st.markdown(f"❌ <span style='color:gray'>{sentence}</span>", unsafe_allow_html=True)          
 
 if 'logged_in' not in st.session_state:
       st.session_state.logged_in = False
@@ -135,6 +156,13 @@ if 'pending_2fa' not in st.session_state:
 
 if 'profile' not in st.session_state:
       st.session_state.profile = None
+
+if "forgot_pw" not in st.session_state:
+      st.session_state.forgot_pw = False
+if "change_pw" not in st.session_state:
+      st.session_state.change_pw = False
+if "send_code" not in st.session_state:
+      st.session_state.send_code = False
 
 if not st.session_state.logged_in:
 
@@ -159,22 +187,52 @@ if not st.session_state.logged_in and not st.session_state.pending_2fa:
       )
 
       if page == 'Register':
+            
             st.header('Create an Acccount')
 
             username= st.text_input("Username")
             email=st.text_input("Email")
             password=st.text_input("Create password",type="password")
-            confirm_pw= st.text_input("Confirm Password",type="password")
-            
-            if password == confirm_pw :
-                  if st.button("Register"):
-                        if register(username,password,email):
-                              st.success("Account created!")
-                        else:  st.error("Username already exists!")
-            else:
-                  st.error("Password don't match")
+            st.write('🔒 Password Strength Meter')
+            if password:
+                  length_pw= len(password) >= 12
+                  caps_pw=bool( re.search(r'[A-Z]',password ))
+                  lowcaps_pw= bool(re.search(r'[a-z]',password))
+                  digits_pw= bool(re.search(r'[0-9]',password))
+                  special_pw= bool(re.search(r'[^A-Za-z0-9]',password))
 
-      if page == "Login":
+                  score = sum([length_pw,caps_pw,lowcaps_pw,digits_pw,special_pw])
+
+                  progress_percentage= score/5
+
+                  display_check_pw(length_pw, "At least 12 characters long")
+                  display_check_pw(caps_pw, "Contains uppercase letters (A-Z)")
+                  display_check_pw(lowcaps_pw, "Contains lowercase letters (a-z)")
+                  display_check_pw(digits_pw, "Contains at least one number (0-9)")
+                  display_check_pw(special_pw, "Contains at least one special character (e.g., !, @, #, $)")
+                  
+                  if score <= 2:
+                        st.error("Weak Password ❌")
+                        st.progress(progress_percentage)
+                  elif score <=4:
+                        st.warning("Moderate Strength ⚠️")
+                        st.progress(progress_percentage)
+                  else:
+                        st.success("Strong Password✅!")
+                  
+                        confirm_pw= st.text_input("Confirm Password",type="password")
+                        
+                        if password == confirm_pw :
+                              if st.button("Register"):
+                                    if register(username,password,email):
+                                          st.success("Account created!")
+                                    else:  st.error("Username already exists!")
+                        elif confirm_pw:
+                              if password != confirm_pw:
+                                    st.error("Password don't match")
+
+
+      if page == "Login" and st.session_state.forgot_pw == False and st.session_state.change_pw== False:
             st.header("Login🔑")
 
             username= st.text_input("Username")
@@ -192,7 +250,67 @@ if not st.session_state.logged_in and not st.session_state.pending_2fa:
                          st.rerun()
 
                   else:  st.error("Incorrect Username or Password")
+            elif st.button("Forgot Password?"):
+                  st.session_state.forgot_pw = True
+                  st.rerun()
 
+      elif st.session_state.forgot_pw == True and st.session_state.send_code== False:
+
+            st.title('Change Password')
+            email=st.text_input("Enter email address")
+            if st.button("Send Verification code ✉"):
+                  username=get_username(conn,email)
+                  if username:
+                        send_verification_code(conn,username)
+                        st.session_state.send_code =True
+                        st.session_state.forgot_pw = True
+                        st.session_state.code_expiry = datetime.now() + timedelta(minutes=1)
+                        st.session_state.reset_username = username
+                        st.rerun()
+                  else:
+                        st.error('Account related to email has not been found.')   
+      elif st.session_state.send_code == True and st.session_state.forgot_pw == True:
+            st.write('Please Verify email before proceeding✅')
+            input_code=st.text_input("Enter Verification code")
+
+            if st.button('Verify'):
+
+                  if datetime.now() >= st.session_state.code_expiry:
+                        st.error("Code expired")
+
+                  elif  input_code == st.session_state.verification_code:
+                        st.session_state.forgot_pw = False
+                        st.session_state.change_pw = True
+                        st.session_state.send_code = False
+                        st.rerun()
+
+                  else: 
+                        st.error('Invalid or expired code')
+
+            if st.button("Resend"):
+                  send_verification_code(conn,st.session_state.reset_username)
+                  st.session_state.code_expiry = datetime.now() + timedelta(minutes=1)
+                  st.success("New code sent!") 
+
+      elif st.session_state.change_pw == True :
+
+            st.title("Change Password🔄")
+            new_pw=st.text_input("Please enter new password",type='password')
+            confirm_pw = st.text_input("Confirm New Password", type="password")
+
+            if st.button("Confirm Password"):
+                  if new_pw != confirm_pw:
+                        st.error("Passwords do not match.")
+                  else:
+                        if new_pw.strip() == "":
+                              st.error("Please enter a password.")
+                        else:
+                              update_pw(conn, new_pw)
+                              st.success("Password changed successfully!")
+                              st.session_state.change_pw = False
+                              st.session_state.forgot_pw = False
+                              st.session_state.send_code = False
+                              st.rerun()
 
 elif st.session_state.pending_2fa:
                   
@@ -243,6 +361,8 @@ if  st.sidebar.button('Logout ➜]'):
       st.session_state.logged_in=False
       st.session_state.username=None
       st.session_state.pending_2fa=False
+      st.session_state.forgot_pw = False
+      st.session_state.change_pw = False
       st.rerun()
 
 
@@ -349,10 +469,32 @@ if st.session_state.logged_in:
                   st.warning(f"Number of Open cases🔓: {len(df[df["status"]=="Open"])}")
 
             with data_tab:
+
                   st.header("Data of incidents:")
-                  st.dataframe(df)
+
+                  df2 = get_all_incidents()
+
+                  severity = st.selectbox("Severity",['All'] + list(df2['severity'].unique()))
+                  if severity != "All":
+                        df2= df2[df2['severity']==severity]
+                  col1 , col2 = st.columns(2)
+                  with col1:
+                        category = st.radio("Category", ["All"]+ list(df2["category"].unique()))
+                        if category != "All":
+                              df2 = df2[df2['category']==category]
+                  with col2:
+                        status = st.radio("Status", ["All"]+ list(df2["status"].unique()))
+                        if status != "All":
+                              df2 = df2[df2['status']== status]
+
+
+                  st.dataframe(df2)
+
+
+
                   
             with chart_tab:
+
                   st.header("Chart Analysis📈")
                   st.subheader("Status of Incidents📊:")
                   
@@ -363,12 +505,26 @@ if st.session_state.logged_in:
 
                   fig= px.bar(
                         cross_tab,
-                        barmode="group",     
-                  )
+                        barmode="group", 
+                        labels={
+                              "value": "Number of Incidents",
+                              "severity": "Severity"
+                        },
+                        title="Cyber Incidents by Severity and Status",
+                        template="plotly"
+                        )
+
 
                   st.plotly_chart(fig)
 
-
+                  img_bytes = fig.to_image(format="pdf")
+                  st.download_button(
+                  label="📥 Export Chart",
+                  data=img_bytes,
+                  file_name="Cyber_Incident.pdf",
+                  mime="file/pdf"
+                  )
+            
                   st.subheader("Category of Incidents🗂️:")
 
                   selected_severity= st.multiselect(
@@ -381,10 +537,29 @@ if st.session_state.logged_in:
                         filtered["severity"],
                         filtered["category"]
                   )
-                  st.line_chart(severity_trend)
 
+                  fig2= px.line(
+                        severity_trend,
+                        labels={
+                              "category":"Category of Incident",
+                              "severity": "Severity"
+                        },
+                        title= "Category of each incident V/S their Severity",
+                        template="plotly",
+                  )           
+                  
+                  st.plotly_chart(fig2)
+
+                  img_bytes2 = fig2.to_image(format="pdf")
+                  st.download_button(
+                  label="📥 Export Chart",
+                  data=img_bytes2,
+                  file_name="Cyber_Incidents_Categories.pdf",
+                  mime= "file/pdf",
+                  )
 
       elif page=='IT Tickets':
+                  
                   st.title("IT Tickets🎟️")
                   UI_colour("#002121","#001010")
                   df=get_all_tickets()
@@ -432,9 +607,25 @@ if st.session_state.logged_in:
                         st.warning(f"Number of Open cases🔓: {len(df[df["status"]=="Open"])}")
 
                   with data_tab:
+                        df2=get_all_tickets()
                         st.header("Data of IT Tickets:")
-                        st.dataframe(df)
-                        
+
+                        priority= st.selectbox("Priority",["All"] + list(df2["priority"].unique()))
+                        if priority != "All":
+                              df2= df2[df2['priority'] == priority]
+
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                              status = st.radio('Status',['All'] + list(df2['status'].unique()))
+                              if status != "All":
+                                    df2=df2[df2['status']== status]
+                        with col2:
+                              assigned = st.radio('Assigned To',['All'] + list(df2['assigned_to'].unique()))
+                              if assigned != "All":
+                                    df2=df2[df2['assigned_to']==assigned]
+
+                        st.dataframe(df2)                        
                   with chart_tab:
 
                         st.subheader("Status since Creation🛠️:")
@@ -446,8 +637,24 @@ if st.session_state.logged_in:
                         .size()
                         .unstack(fill_value=0)
                         )
-                        
-                        st.line_chart(priority_trend)
+                        fig= px.line(
+                              priority_trend,
+                              x=priority_trend.index,
+                              y=priority_trend.columns,
+                              markers=True,
+                              template="plotly",
+
+                        )
+                        st.plotly_chart(fig)
+
+                        img_bytes = fig.to_image(format="pdf")
+
+                        st.download_button(
+                              label="📥 Export Chart",
+                              data=img_bytes,
+                              file_name="IT_Tickets_Creation_Date",
+                              mime="file/pdf"
+                        )
 
                         st.subheader("Technicians Assigned👨🏻‍💻:")
                         selected_status=st.multiselect(
@@ -460,10 +667,24 @@ if st.session_state.logged_in:
                               filtered_IT["status"],
                               filtered_IT["assigned_to"]
                         )
-                        st.scatter_chart(status_trend)
 
+                        fig2 = px.scatter(
+                              status_trend,
+                              template="plotly",
+                        )
 
+                        st.plotly_chart(fig2)
+
+                        img_bytes2= fig2.to_image(format="pdf")
+                        st.download_button(
+                              label="📥 Export Chart",
+                              data= img_bytes2,
+                              file_name="IT_Tickets_assigned",
+                              mime="file/pdf",
+                        )
+                        
       elif page=="Metadata":
+
             df=get_all_metadata()
             st.title("Metadata💾")
             UI_colour('#17153B',"#030830")
@@ -472,10 +693,17 @@ if st.session_state.logged_in:
             )
 
             with data_tab:
+
                   st.header('Data of Metadata:')
-                  st.dataframe(df)
+                  df2= get_all_metadata()
+                  uploaded = st.selectbox("Uploaded by", ["All"] + list(df2["uploaded_by"].unique()))
+                  if uploaded != "All":
+                        df2 = df2[df2["uploaded_by"] == uploaded]
+                  
+                  st.dataframe(df2)
             
             with overview_tab:
+
                   st.info('''
                   The Datasets Metadata section provides summary information about the datasets 
                   stored within the platform. It includes details such as dataset names, record counts, number of columns, upload 
@@ -518,7 +746,17 @@ if st.session_state.logged_in:
                               barmode="group",
                         )
                         st.plotly_chart(fig)
-      
+                        buffer = io.BytesIO()
+
+                        img_bytes = fig.to_image(format="pdf")
+
+                        st.download_button(
+                        label="📥 Export Chart",
+                        data=img_bytes,
+                        file_name="Metadata.pdf",
+                        mime="file/pdf"
+                        )
+                        
       elif page == "AI Chatbot":
             UI_colour('#0C0950','#090040')
             st.title("👾 AI Security Assistant")
@@ -755,3 +993,7 @@ if st.session_state.logged_in:
                               change_pw(conn, new_password)
                               st.success("Password changed successfully!")
                               st.rerun()
+            if st.button("Delete Account", type="primary"):
+                  delete_user(conn,st.session_state.username)
+                  st.session_state.logged_in = False
+                  st.rerun()
