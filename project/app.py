@@ -31,7 +31,7 @@ import re
 
 
 client = Groq(
-      api_key=st.secrets['Open_AI_Key']
+      api_key=st.secrets['Open_AI_Key']   
 )
 
 st.set_page_config (
@@ -44,46 +44,42 @@ conn=get_connection()
 create_user_table(conn)
 
 def select_pw(conn):
-
-    cursor = conn.cursor()
-    cursor.execute("""
-    SELECT password_hash FROM users WHERE username = ?
-    """,
-    (st.session_state.username,))
-    pw= cursor.fetchone()
-    if pw:
-        return pw[0]
-    else:
-        return None
-
+      cursor = conn.cursor()
+      cursor.execute("""
+      SELECT password_hash FROM users WHERE username = ?
+      """,
+      (st.session_state.username,))
+      pw= cursor.fetchone()
+      if pw:
+            return pw[0]
+      else:
+            return None
 
 def passwordhash(password):
-        pw_bytes= password.encode('utf-8')
-        salt= bcrypt.gensalt()
-        hashed_pw= bcrypt.hashpw(pw_bytes,salt)
-        return hashed_pw
+      pw_bytes= password.encode('utf-8')
+      salt= bcrypt.gensalt()
+      hashed_pw= bcrypt.hashpw(pw_bytes,salt)
+      return hashed_pw
 
 def change_pw(conn,new_pw):
-    
-    hashed=passwordhash(new_pw)
-    cursor= conn.cursor()
-    cursor.execute("""
-    UPDATE users
-    SET password_hash = ? WHERE username = ?
-    """,
-    (hashed,st.session_state.username,))
-    conn.commit()
+      hashed=passwordhash(new_pw)
+      cursor= conn.cursor()
+      cursor.execute("""
+      UPDATE users
+      SET password_hash = ? WHERE username = ?
+      """,
+      (hashed,st.session_state.username,))
+      conn.commit()
 
 def update_pw(conn,new_pw):
-    
-    hashed=passwordhash(new_pw)
-    cursor= conn.cursor()
-    cursor.execute("""
-    UPDATE users
-    SET password_hash = ? WHERE username = ?
-    """,
-    (hashed,st.session_state.reset_username,))
-    conn.commit()
+      hashed=passwordhash(new_pw)
+      cursor= conn.cursor()
+      cursor.execute("""
+      UPDATE users
+      SET password_hash = ? WHERE username = ?
+      """,
+      (hashed,st.session_state.reset_username,))
+      conn.commit()
 
 def passwordcheck(password,hashed_pw):
       password_byte=password.encode("utf-8")
@@ -241,20 +237,20 @@ if not st.session_state.logged_in and not st.session_state.pending_2fa:
             if st.button("Login"):
                   global user
                   if login(username,password):        
-                         send_verification_code(conn,username)
-                         print(username)
-                         print(get_mail(conn,username))
+                        send_verification_code(conn,username)
+                        print(username)
+                        print(get_mail(conn,username))
 
-                         st.session_state.pending_2fa = True                                                   
-                         st.session_state.username=username
-                         st.rerun()
+                        st.session_state.pending_2fa = True                                                   
+                        st.session_state.username=username
+                        st.rerun()
 
                   else:  st.error("Incorrect Username or Password")
             elif st.button("Forgot Password?"):
                   st.session_state.forgot_pw = True
                   st.rerun()
 
-      elif st.session_state.forgot_pw == True and st.session_state.send_code== False:
+      elif  page=="Login" and st.session_state.forgot_pw == True and st.session_state.send_code== False:
 
             st.title('Change Password')
             email=st.text_input("Enter email address")
@@ -269,7 +265,7 @@ if not st.session_state.logged_in and not st.session_state.pending_2fa:
                         st.rerun()
                   else:
                         st.error('Account related to email has not been found.')   
-      elif st.session_state.send_code == True and st.session_state.forgot_pw == True:
+      elif page == "Login" and st.session_state.send_code == True and st.session_state.forgot_pw == True :
             st.write('Please Verify email before proceeding✅')
             input_code=st.text_input("Enter Verification code")
 
@@ -870,11 +866,11 @@ if st.session_state.logged_in:
                         ]
                         st.rerun()
 
-            
             with Metadata:
                   st.subheader("📊 Data Science Assistant")
                   question= st.chat_input("Ask a data science question...")
-                  data_science_prompt="You are a data science expert. Help with dataset analysis, choosing visualisation types, statistical methods and machine learning. Suggest concrete next steps."
+                  data_science_prompt="You are a data science expert. Help with dataset analysis, choosing visualisation types, " \
+                  "statistical methods and machine learning. Suggest concrete next steps."
                   if 'meta' not in st.session_state:
                         st.session_state.meta=[
                               {
