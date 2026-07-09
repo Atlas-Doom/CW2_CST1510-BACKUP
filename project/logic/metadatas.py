@@ -6,4 +6,4 @@ def get_all_metadata():
     return pd.read_sql(
         "SELECT * FROM datasets_metadata",
         conn
-    )
+    ) # Selects everything from the Metadata file

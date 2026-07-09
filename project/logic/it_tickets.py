@@ -6,4 +6,4 @@ def get_all_tickets():
     return pd.read_sql(
         "SELECT * FROM it_tickets",
         conn
-    )
+    ) # Selects everything from the IT Tickets file
