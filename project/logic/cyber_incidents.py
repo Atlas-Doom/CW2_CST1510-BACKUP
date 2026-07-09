@@ -6,4 +6,4 @@ def get_all_incidents():
     return pd.read_sql(
         "SELECT * FROM cyber_incidents",
         conn
-    )
+    )# This selects everything from the cyber incidents file
