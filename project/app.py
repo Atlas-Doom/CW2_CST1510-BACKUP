@@ -29,7 +29,7 @@ from app_model.users import get_username
 from datetime import datetime, timedelta
 
 client = Groq(
-      api_key=st.secrets['Open_AI_Key']    # API for AI including AI key that was kept hidden using secrets
+      api_key=st.secrets['Groq_AI_Key']    # API for AI including AI key that was kept hidden using secrets
 )
 
 st.set_page_config (
@@ -41,23 +41,15 @@ st.set_page_config (
 conn=get_connection()    # Connects conn to the database
 create_user_table(conn) # This creates the database if it does not already exist 
 
-def select_pw(conn):    # This 
-      cursor = conn.cursor()
-      cursor.execute("""
-      SELECT password_hash FROM users WHERE username = ?
-      """,
-      (st.session_state.username,))
-      pw= cursor.fetchone()
-      if pw:
-            return pw[0]
-      else:
-            return None
-
 def passwordhash(password):       # This function converts the password first then adds a randomly generated salt to it
       pw_bytes= password.encode('utf-8') 
       salt= bcrypt.gensalt()
       hashed_pw= bcrypt.hashpw(pw_bytes,salt) # And this hashes the password alongside the salt
       return hashed_pw
+
+def passwordcheck(password,hashed_pw):   
+      password_byte=password.encode("utf-8")
+      return bcrypt.checkpw(password_byte,hashed_pw) # compares the password stored in the database to the password the user inputted     
 
 def change_pw(conn,new_pw):       # Function that changes the password in the database where the username is given
       hashed=passwordhash(new_pw)
@@ -78,9 +70,19 @@ def update_pw(conn,new_pw):    #This function has the exact same purpose as the 
       """,
       (hashed,st.session_state.reset_username,))# session state used specifically for storing the username of the user 
                                                 # on the changing password page on the login
-def passwordcheck(password,hashed_pw):   
-      password_byte=password.encode("utf-8")
-      return bcrypt.checkpw(password_byte,hashed_pw) # compares the password stored in the database to the password the user inputted
+
+
+def select_pw(conn):    # This 
+      cursor = conn.cursor()
+      cursor.execute("""
+      SELECT password_hash FROM users WHERE username = ?
+      """,
+      (st.session_state.username,))
+      pw= cursor.fetchone()
+      if pw:
+            return pw[0]
+      else:
+            return None
 
 def register(username,password,email):   #Takes data from the users which will be used to create their account
       username_exists = get_user(conn,username)   # if the username already exists it will go fetch that username in the database
@@ -730,8 +732,15 @@ if st.session_state.logged_in:
 
             with Cyber_incidents:
                   # the prompt for the cyber incidents assistant
-                  cyber_prompt="""You are a senior cybersecurity analyst. Analyse incidents using MITRE ATT&CK and CVE references. 
-                  Provide structured responses: Root Cause, Immediate Actions, Prevention Measures, Risk Level."""
+                  cyber_prompt="""You are a senior cybersecurity analyst. 
+                  You must ONLY answer questions related to cybersecurity, cyber incidents,
+                  network security, malware, digital forensics, penetration testing,
+                  vulnerabilities, MITRE ATT&CK, CVEs, and information security.
+                  Analyse incidents using MITRE ATT&CK and CVE references. 
+                  Provide structured responses: Root Cause, Immediate Actions, Prevention Measures, Risk Level.
+                  If the users questions does not correlate with Cyber security or help Cyber incidents etc.. politely respond with:
+                  I am sorry I do not understand. I was designed to asssit you regarding cybersecurity and cyber incidents. Please ask a 
+                  question related to Cybersecurity and Cyber Incidents and I'll be happy to assist you!"""
 
                   if 'cyber_messagers' not in st.session_state:
                         st.session_state.cyber_messagers=[ # this basically stores the messagers inside of the session state to prevent the AI from forgetting what has been said previously
@@ -785,7 +794,14 @@ if st.session_state.logged_in:
             with it_tickets:
                   st.subheader("💻 IT Operations Assistant") # Assistant for the IT Tickets
 
-                  it_ticket_prompt="You are an IT operations lead. Prioritise support tickets by impact and urgency, suggest troubleshooting steps and provide infrastructure best practices."
+                  it_ticket_prompt="""You are an IT operations lead. Prioritise support tickets by impact and urgency,
+                  suggest troubleshooting steps and provide infrastructure best practices.
+                  You must ONLY answer questions related to IT support, help desk operations, infrastructure, hardware, software, 
+                  networking, operating systems, user account management, printers, servers, cloud services, and IT ticket management.
+                  If the users questions does not correlate with IT support or help desk operations etc.. politely respond with : 
+                  I am sorry I was designed to only answer questions related to IT support or queries regarding infrastructure. Please ask a question 
+                  related to IT support or infrastructure, and I'll be happy to assist you."""
+
                   if 'it_messagers' not in st.session_state:
                         st.session_state.it_messagers=[
                               {
@@ -837,8 +853,14 @@ if st.session_state.logged_in:
             with Metadata: # AI assistant for the metadata
                   st.subheader("📊 Data Science Assistant") 
                   question= st.chat_input("Ask a data science question...")
-                  data_science_prompt="You are a data science expert. Help with dataset analysis, choosing visualisation types, " \
-                  "statistical methods and machine learning. Suggest concrete next steps."
+                  data_science_prompt="""You are a data science expert. Help with dataset analysis, choosing visualisation types,  
+                  statistical methods and machine learning. Suggest concrete next steps. 
+                  You must ONLY answer questions related to data analysis, datasets, data visualisation, statistics, machine learning, 
+                  data preprocessing, feature engineering, model evaluation, and data-driven decision making. 
+                  If the user's question does not concern data science or data analysis, politely respond with:
+                  I am designed to assist only with data science and dataset analysis. Please ask a question related to data analysis, 
+                  visualisation, statistics, or machine learning and I'll gladly assist you!"""
+
                   if 'meta' not in st.session_state: # use session state to store messages/prompts
                         st.session_state.meta=[
                               {
